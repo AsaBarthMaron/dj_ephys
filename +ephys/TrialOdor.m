@@ -3,9 +3,9 @@
 
 -> ephys.Trial
 ---
-odor           : varchar(50)           # odor name
-concentration  : tinyint unsigned      # Log of dilution, unsigned. 
-                                       # e.g. 3 = abs(log10(10^-3)), corresponds to 1:10^-3
+odor           : varchar(50)            # odor name
+concentration  : tinyint unsigned       # Log of dilution, unsigned. 
+                                        # e.g. 3 = abs(log10(10^-3)), corresponds to 1:10^-3
 -> ephys.Waveform
 
 %}

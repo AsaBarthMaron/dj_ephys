@@ -1,52 +1,48 @@
 %{
 # trial
+
 -> ephys.Cell
-trial_id = 1: int                  # unique trial id
+trial_id = 1     		: int                  # unique trial id
 ---
-trace=NULL: longblob
--> ephys.Amplifier
-units = 'mV': varchar(20)			   # Should be defined in Amplifier, then fetched using keys.
+voltage  		 		: longblob
+current  		 		: longblob
+holding_current         : smallint  # in pA
+holding_command = NULL  : smallint # in mV
+-> ephys.Amplifier 							
 
-odor = NULL: varchar(50)
-odor_concentration = NULL: tinyint unsigned
-odor_on_duration =  NULL: smallint unsigned
-odor_freq =  NULL: tinyint unsigned
-odor_cmd =  NULL: longblob
+odor_stim = 0     		: tinyint unsigned 		# logical, was odor used in this trial?
+opto_stim = 0     		: tinyint unsigned 		# logical, was otpo stim used in this trial?
+ext_cmd  = 0      		: tinyint unsigned 		# logical, was an external command sent (from amplifier)?
+seal_test = 0     		: tinyint unsigned 		# logical, was the seal test on?
+spacer_trial = 1  		: tinyint unsigned		# logical, was this a 'spacer' trial?
 
-led_power = NULL: tinyint unsigned
-light_on_duration = NULL: smallint unsigned
-light_freq =  NULL: smallint unsigned
-light_cmd =  NULL: longblob
-mercury_lamp = NULL: varchar(20)	# unsure what datatype to use actually
-
-cmd_mag = NULL: smallint
-ext_cmd = NULL: longblob
-
-seal_test = NULL: tinyint unsigned	# 1 for true
-holding_current = NULL: smallint  # in pA
-holding_command = NULL: smallint # in mV
-spacer = NULL: tinyint unsigned	# 1 for true
-r_input = NULL: smallint unsigned
-clearing_trial = NULL: tinyint unsigned	# 1 for true
 %}
 
 classdef Trial < dj.Imported
 	methods(Access=protected)
     	function makeTuples(self,key)
+
+    		% Experiment-level operations
+    		% each call of makeTuples will iterate through and import all trials for a given experiment.
+
+    		% get path to data for experiment
 			dataPath = fetchn(ephys.Experiment & ['exp_id=' string(key.exp_id)], 'data_path');
 			dataPath = dataPath{1};
-
+			% get struct of files to be loaded
 			dataFiles = dir(dataPath);
 			dataFiles = dataFiles(~[dataFiles.isdir]);
 			[~,idx] = sort([dataFiles.datenum]);
 			dataFiles = dataFiles(idx);
 
+			% iterate through each data file, a single file often consists of multipel trials ('block')
 			for iFile = 1:length(dataFiles)
 				blk = load(fullfile(dataPath,dataFiles(iFile).name))
 				disp([dataFiles(iFile).name ' was loaded --- success!!'])
 				key.trial_id = iFile
 				tuple = key
-				tuple.trace = blk.data(:,3,1)
+				tuple.voltage = blk.data(:,3,1)
+				tuple.current = blk.data(:,1,1)
+				tuple.holding_current = 10;
 				tuple.gain = 100;
 				tuple.mode = 'I-normal';
 				tuple.filter_freq = 5;
