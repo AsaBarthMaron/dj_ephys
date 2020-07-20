@@ -8,6 +8,8 @@ voltage  		 		: longblob
 current  		 		: longblob
 holding_current         : smallint  			# in pA
 holding_command = NULL  : smallint 				# in mV
+trial_name				: varchar(100)
+trial_time				: time 					# the time the trial/block was saved
 samp_rate				: int unsigned			# sampling rate (samples / second)
 -> ephys.Amplifier 							
 
@@ -50,6 +52,7 @@ classdef Trial < dj.Imported
 
 			% Trial-block level operations
 			% iterate through each data file, a single file often consists of multiple trials (a 'block').
+			trialId = 1;
 			for iFile = 1:length(dataFiles)
 				fname = dataFiles(iFile).name;
 				f = load(fullfile(dataPath,fname));
@@ -57,25 +60,35 @@ classdef Trial < dj.Imported
 				% Trial-level operations
 				% the majority of this code will be logic to parse filenames of various trial types.
 
+
 				% 'while patching' trials
 				% acquired using 'staq/run_spacer_trial.m'
 				% e.g., bath, seal, vclamp (sealtest), early Iclamp single trials, etc.
 				% they have an important regularity - 
 				% they are the only files with 'exp_name' in the file name
 				if ~isempty(strfind(fname, exp_name))
-					key.trial_id = 1;
-					tuple = key
-					tuple.samp_rate = f.sampRate
+					key.trial_id = trialId; 		% These 'spacer' trial files have 1 trial / file
+					tuple = key;
+					tuple.trial_time = dataFiles(iFile).date(end-7:end);
+					tuple.samp_rate = f.sampRate;
+					tuple.trial_name = fname((13 + length(exp_name)):end-4);
 
 					% get & set amplifier settings
-					mode_voltage = num2str(round(median(f.spacer_data(:, MODE_CH))))
-					gain_voltage = num2str(round(median(f.spacer_data(:, GAIN_CH)*10)))
-					filter_voltage = num2str(round(median(f.spacer_data(:, FILTER_CH))))
-					tuple.mode = fetch(ephys.Mode & ['mode_voltage=' mode_voltage]).mode
-					% tuple.gain = fetch(ephys.Gain & ['gain_voltage=' gain_voltage]).gain
-					tuple.gain = 10 % TODO: fix the above, these measurements are not as good as I thought
-					tuple.filter_freq = fetch(ephys.FilterFreq & ['filter_freq_voltage=' filter_voltage]).filter_freq
-					tuple.units = fetch(ephys.Mode & ['mode="' tuple.mode '"'], 'units').units
+					mode_voltage = num2str(round(median(f.spacer_data(:, MODE_CH))));
+					filter_voltage = num2str(round(median(f.spacer_data(:, FILTER_CH))));
+					tuple.mode = fetch(ephys.Mode & ['mode_voltage=' mode_voltage]).mode;
+					tuple.filter_freq = fetch(ephys.FilterFreq & ['filter_freq_voltage=' filter_voltage]).filter_freq;
+					tuple.units = fetch(ephys.Mode & ['mode="' tuple.mode '"'], 'units').units;
+
+					gain_voltage = round(median(f.spacer_data(:, GAIN_CH)*10));
+					if mod(gain_voltage, 5) ~= 0 	% hack, because in some trials there is a DC offset
+						common_gain_v = [40, 55];
+						[~, i_closer] = min(abs(common_gain_v - gain_voltage));
+						gain_voltage = common_gain_v(i_closer);
+					end
+					gain_voltage = num2str(gain_voltage);
+					tuple.gain = fetch(ephys.Gain & ['gain_voltage=' gain_voltage]).gain;
+					% tuple.gain = 10 % TODO: fix the above, these measurements are not as good as I thought
 
 					scaling_factor = 1e3 / tuple.gain 		% x1000 factor for (V / nA) -> (mV / pA) conversion)
 					
@@ -86,9 +99,10 @@ classdef Trial < dj.Imported
 						tuple.voltage = f.spacer_data(:, SO_CH) * scaling_factor;
 						tuple.current = f.spacer_data(:, I_CH) * (1e3/I_SCALING);
 					end
-					tuple.holding_current = round(median(tuple.current))
-					tuple.holding_command = round(median(tuple.voltage))
+					tuple.holding_current = round(median(tuple.current));
+					tuple.holding_command = round(median(tuple.voltage));
 
+					% Logic to handle different 'spacer' trial types
 					if ~isempty(strfind(fname, 'whole_cell_current_step'))
 						tuple.ext_cmd = 1;
 						self.insert(tuple);
@@ -96,27 +110,48 @@ classdef Trial < dj.Imported
 						tuple = key;
 						tuple.units = 'pA'
 						tuple.wave_name = 'r_input_test'
-						tuple.cmd_mag = round(median(I((0.75 * sampRate):sampRate)) - median(I))
-						make(ephys.TrialExtCmd, tuple)
+						tuple.cmd_mag = round(median(I((0.75 * f.sampRate):f.sampRate)) - median(I))
+						make(ephys.TrialExtCmd, tuple);
 					elseif ~isempty([strfind(fname, 'Vclamp_bath'), strfind(fname, 'Vclamp_seal'), strfind(fname, 'Vclamp_cell')])
+						tuple.seal_test = 1;
+						self.insert(tuple);
+						tuple = key;
+						make(ephys.TrialSealTest, tuple);
+					elseif ~isempty([strfind(fname, 'Vclamp_seal_spikes'), strfind(fname, 'Iclamp_zero')])
+						self.insert(tuple);
+					else
+						error(['Unrecognized file name: ', fname])
 					end
-				else 	
-					key.trial_id = iFile
-					tuple = key
-					tuple.samp_rate = f.sampRate				
-					tuple.samp_rate = f.sampRate
-					tuple.voltage = f.data(:,3,1)
-					tuple.current = f.data(:,1,1)
-					tuple.holding_current = 10;
-					tuple.gain = 100;
-					tuple.mode = 'I-normal';
-					tuple.filter_freq = 5;
-					disp(tuple)
-					self.insert(tuple)
-					make(ephys.TrialOdor, key)
+				else
+					nTrials = size(f.data, 3);
+					for iTrial = 1:nTrials
+
+
+
+						key.trial_id = trialId;
+						tuple = key
+						tuple.trial_time = dataFiles(iFile).date(end-7:end);
+						tuple.samp_rate = f.sampRate;
+						tuple.trial_name = fname(12:end-4);
+						tuple.voltage = f.data(:,3,iTrial)
+						tuple.current = f.data(:,1,iTrial)
+						tuple.holding_current = 10;
+						tuple.gain = 100;
+						tuple.mode = 'I-normal';
+						tuple.filter_freq = 5;
+						disp(tuple)
+						self.insert(tuple);
+						make(ephys.TrialOdor, key)
+						trialId = trialId + 1;
+					end
+					trialId = trialId - 1;
 				end
-					
+				trialId = trialId + 1;
 			end
+    	end
+
+    	function insertTuple(self,tuple)
+    		
     	end
     end
 end
