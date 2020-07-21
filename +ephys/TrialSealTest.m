@@ -12,7 +12,7 @@ classdef TrialSealTest < dj.Part
     end
     methods
         function make(self, key)
-            self.insert(key)
+            self.insert(key);
         end
     end
 end

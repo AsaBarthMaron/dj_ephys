@@ -15,12 +15,8 @@ classdef TrialOdor < dj.Part
         master = ephys.Trial
     end
     methods
-        function make(self, key)
-        	tuple = key
-        	tuple.odor = 'test_odor'
-        	tuple.concentration = 3
-        	tuple.wave_name = 'slow'
-            self.insert(tuple)
+        function make(self, tuple)
+            self.insert(tuple);
         end
     end
 end

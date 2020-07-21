@@ -9,8 +9,9 @@ current  		 		: longblob
 holding_current         : smallint  			# in pA
 holding_command = NULL  : smallint 				# in mV
 trial_name				: varchar(100)
-trial_time				: time 					# the time the trial/block was saved
+save_time				: time 					# the time the trial/block was saved
 samp_rate				: int unsigned			# sampling rate (samples / second)
+#filename 				: varchar				# TODO: add this?
 -> ephys.Amplifier 							
 
 odor_stim = 0     		: tinyint unsigned 		# logical, was odor used in this trial?
@@ -70,7 +71,7 @@ classdef Trial < dj.Imported
 					% trial metadata
 					key.trial_id = trialId; 		
 					tuple = key;
-					tuple.trial_time = dataFiles(iFile).date(end-7:end);
+					tuple.save_time = dataFiles(iFile).date(end-7:end);
 					tuple.samp_rate = f.sampRate;
 					tuple.trial_name = fname((13 + length(exp_name)):end-4);
 
@@ -85,7 +86,7 @@ classdef Trial < dj.Imported
 						tuple = key;
 						tuple.units = 'pA'
 						tuple.wave_name = 'r_input_test'
-						tuple.cmd_mag = round(median(I((0.75 * f.sampRate):f.sampRate)) - median(I))
+						tuple.cmd_mag = round(median(I((0.75 * f.sampRate):f.sampRate)) - median(I));
 						make(ephys.TrialExtCmd, tuple);
 					elseif ~isempty([strfind(fname, 'Vclamp_bath'), strfind(fname, 'Vclamp_seal'), strfind(fname, 'Vclamp_cell')])
 						tuple.seal_test = 1;
@@ -103,7 +104,7 @@ classdef Trial < dj.Imported
 					for iTrial = 1:nTrials
 						key.trial_id = trialId; 		
 						tuple = key;
-						tuple.trial_time = dataFiles(iFile).date(end-7:end);
+						tuple.save_time = dataFiles(iFile).date(end-7:end);
 						tuple.samp_rate = f.sampRate;
 						tuple.trial_name = fname(12:end-4);
 						tuple.block = 1;
@@ -121,8 +122,24 @@ classdef Trial < dj.Imported
 
 						% add recording trace and metadata, insert tuple
 						tuple = self.addTrace(tuple, f.data(:,:,iTrial), c);
+						tuple.odor_stim = 1;
 						self.insert(tuple);
-						make(ephys.TrialOdor, key);
+
+						% logic to handle different trial types
+						if (contains(fname, '2-hep') || contains(fname, 'farnesol'))
+							if (contains(fname, '2-hep') && contains(fname, 'farnesol'))
+								continue
+							end
+							tuple = key;
+							fname_split = strsplit(fname, '_');
+							tuple.odor = fname_split{find(contains(fname_split, '10^-'))-1};
+							tuple.concentration = str2num(fname_split{contains(fname_split, '10^-')}(5:end));
+							
+							WAV_LOOKUP = {'fast', 'med', 'slow'};
+							tuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
+							make(ephys.TrialOdor, tuple);
+						end
+
 						trialId = trialId + 1;
 					end
 					trialId = trialId - 1;
@@ -151,7 +168,7 @@ classdef Trial < dj.Imported
 			tuple.gain = fetch(ephys.Gain & ['gain_voltage=' gain_voltage]).gain;
 			% tuple.gain = 10 % TODO: fix the above, these measurements are not as good as I thought
 
-			scaling_factor = 1e3 / tuple.gain 		% x1000 factor for (V / nA) -> (mV / pA) conversion)
+			scaling_factor = 1e3 / tuple.gain; 		% x1000 factor for (V / nA) -> (mV / pA) conversion)
 			
 			if strcmp('V-clamp', tuple.mode)
 				tuple.voltage = data(:, c.V_CH) * (1e3/10);
