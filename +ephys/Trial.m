@@ -8,10 +8,12 @@ voltage  		 		: longblob
 current  		 		: longblob
 holding_current         : smallint  			# in pA
 holding_command = NULL  : smallint 				# in mV
+resting_v = NULL		: float					# in mV
+r_input = NULL			: float					# in GOhms
 trial_name				: varchar(100)
+file_name 				: varchar(200)			
 save_time				: time 					# the time the trial/block was saved
 samp_rate				: int unsigned			# sampling rate (samples / second)
-#filename 				: varchar				# TODO: add this?
 -> ephys.Amplifier 							
 
 odor_stim = 0     		: tinyint unsigned 		# logical, was odor used in this trial?
@@ -19,7 +21,7 @@ opto_stim = 0     		: tinyint unsigned 		# logical, was otpo stim used in this t
 ext_cmd  = 0      		: tinyint unsigned 		# logical, was an external command sent (from amplifier)?
 seal_test = 0     		: tinyint unsigned 		# logical, was the seal test on?
 spacer_trial = 0  		: tinyint unsigned		# logical, was this a 'spacer' trial?
-block = 0				: tinyint unsigned		# logical, is this trial part of a block?
+trial_block = 0			: tinyint unsigned		# logical, is this trial part of a block?
 %}
 
 classdef Trial < dj.Imported
@@ -74,20 +76,16 @@ classdef Trial < dj.Imported
 					tuple.save_time = dataFiles(iFile).date(end-7:end);
 					tuple.samp_rate = f.sampRate;
 					tuple.trial_name = fname((13 + length(exp_name)):end-4);
+					tuple.file_name = fname;
+					tuple.trial_block = 0;
+					tuple.spacer_trial = 0;
 
 					% add recording trace and metadata
 					tuple = self.addTrace(tuple, f.spacer_data, c);
 
 					% logic to handle different 'spacer' trial types
 					if ~isempty(strfind(fname, 'whole_cell_current_step'))
-						tuple.ext_cmd = 1;
-						self.insert(tuple);
-						I = tuple.current;
-						tuple = key;
-						tuple.units = 'pA'
-						tuple.wave_name = 'r_input_test'
-						tuple.cmd_mag = round(median(I((0.75 * f.sampRate):f.sampRate)) - median(I));
-						make(ephys.TrialExtCmd, tuple);
+						self.insertExtCmdTrial(key, tuple);
 					elseif ~isempty([strfind(fname, 'Vclamp_bath'), strfind(fname, 'Vclamp_seal'), strfind(fname, 'Vclamp_cell')])
 						tuple.seal_test = 1;
 						self.insert(tuple);
@@ -107,37 +105,44 @@ classdef Trial < dj.Imported
 						tuple.save_time = dataFiles(iFile).date(end-7:end);
 						tuple.samp_rate = f.sampRate;
 						tuple.trial_name = fname(12:end-4);
-						tuple.block = 1;
+						tuple.file_name = fname;
+						tuple.trial_block = 1;
 
 						% if there is a spacer trial, insert it
 						if spacer
 							spacer_tuple = tuple;
 							spacer_tuple.spacer_trial = 1;
 							spacer_tuple = self.addTrace(spacer_tuple, f.spacer_data(:,:,iTrial), c);
-							self.insert(spacer_tuple);
+							self.insertExtCmdTrial(key, spacer_tuple);
+
 							trialId = trialId + 1;
 							tuple.trial_id = trialId;
 							key.trial_id = trialId;
+						else
+							spacer_tuple.spacer_trial = 0;
 						end
 
-						% add recording trace and metadata, insert tuple
+						% add recording trace and metadata
 						tuple = self.addTrace(tuple, f.data(:,:,iTrial), c);
-						tuple.odor_stim = 1;
-						self.insert(tuple);
+						
 
 						% logic to handle different trial types
 						if (contains(fname, '2-hep') || contains(fname, 'farnesol'))
+							tuple.odor_stim = 1;
 							if (contains(fname, '2-hep') && contains(fname, 'farnesol'))
 								continue
 							end
-							tuple = key;
+							odorTuple = key;
 							fname_split = strsplit(fname, '_');
-							tuple.odor = fname_split{find(contains(fname_split, '10^-'))-1};
-							tuple.concentration = str2num(fname_split{contains(fname_split, '10^-')}(5:end));
+							odorTuple.odor = fname_split{find(contains(fname_split, '10^-'))-1};
+							odorTuple.concentration = str2num(fname_split{contains(fname_split, '10^-')}(5:end));
 							
 							WAV_LOOKUP = {'fast', 'med', 'slow'};
-							tuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
-							make(ephys.TrialOdor, tuple);
+							odorTuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
+							self.insert(tuple);
+							make(ephys.TrialOdor, odorTuple);
+						elseif contains(fname, 'current_steps')
+							self.insertExtCmdTrial(key, tuple);
 						end
 
 						trialId = trialId + 1;
@@ -148,7 +153,7 @@ classdef Trial < dj.Imported
 			end
     	end
 
-    	function tuple = addTrace(self,tuple, data, c)
+    	function tuple = addTrace(self,tuple,data,c)
     		% and related recording / amplifier metadata.
 
 			% get & set amplifier settings
@@ -173,12 +178,32 @@ classdef Trial < dj.Imported
 			if strcmp('V-clamp', tuple.mode)
 				tuple.voltage = data(:, c.V_CH) * (1e3/10);
 				tuple.current = data(:, c.SO_CH) * scaling_factor;
+				tuple.holding_command = round(median(tuple.voltage));
 			else
 				tuple.voltage = data(:, c.SO_CH) * scaling_factor;
 				tuple.current = data(:, c.I_CH) * (1e3/c.I_SCALING);
+				tuple.resting_v = median(tuple.voltage);
 			end
 			tuple.holding_current = round(median(tuple.current));
-			tuple.holding_command = round(median(tuple.voltage));
+		end
+
+		function insertExtCmdTrial(self,key,tuple)
+			tuple.ext_cmd = 1;
+			extTuple = key;
+			if contains(tuple.file_name, 'current_steps')
+				iExt = (3.5 * tuple.samp_rate):(4 * tuple.samp_rate);
+				extTuple.wave_name = 'current_step'
+			elseif tuple.spacer_trial || (~tuple.trial_block)
+				iExt = (0.75 * tuple.samp_rate):(1 * tuple.samp_rate);
+				extTuple.wave_name = 'r_input_test';
+			end
+			
+			extTuple.cmd_units = 'pA'	% Right now these ExtCmd trials are assumed to be in Iclamp
+			extTuple.cmd_mag = median(tuple.current(iExt)) - median(tuple.current);
+			extTuple.response_mag = median(tuple.voltage(iExt)) - median(tuple.voltage);
+			tuple.r_input = extTuple.response_mag / extTuple.cmd_mag;
+			self.insert(tuple);
+			make(ephys.TrialExtCmd, extTuple);
 		end
     end
 end

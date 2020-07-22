@@ -9,11 +9,12 @@ s = rmfield(s, 'CellType')
 s = rmfield(s, 'PhysiologyComments')
 s = rmfield(s, 'AnatomyComments')
 s = rmfield(s, 'ExpressionComments')
-s = s([61:63, 117])
+s = s([61:63, 117, 134])
 s(1).data_path = '/Volumes/SSD_DATA/2017-05-24'
 s(2).data_path = '/Volumes/SSD_DATA/2017-05-28'
 s(3).data_path = '/Volumes/SSD_DATA/2017-05-29'
 s(4).data_path = '/Volumes/SSD_DATA/2019-07-26_2'
+s(5).data_path = '/Volumes/SSD_DATA/2019-10-25'
 
 insert(ephys.Experiment, s)
 
@@ -29,8 +30,8 @@ s = rmfield(s, 'CellType')
 s = rmfield(s, 'PhysiologyComments')
 s = rmfield(s, 'AnatomyComments')
 s = rmfield(s, 'ExpressionComments')
-s = s(117)
-s(1).data_path = '/Volumes/SSD_DATA/2019-07-26_2'
+s = s(134)
+s(1).data_path = '/Volumes/SSD_DATA/2019-10-25'
 
 insert(ephys.Experiment, s)
 

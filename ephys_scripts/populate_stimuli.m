@@ -1,32 +1,34 @@
 %% Populate Waveform
 
 % R input test waveform
-load('/Users/asa/Documents/Code/ephys_meta_analysis/stimuli/r_input_test.mat');
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/r_input_test.mat');
 insert(ephys.Waveform, s);
 
 % Most common 1s stimulus
-load('/Users/asa/Documents/Code/ephys_meta_analysis/stimuli/1_second.mat');
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/1_second.mat');
 insert(ephys.Waveform, s);
 
 % Most common 2s stimulus
-load('/Users/asa/Documents/Code/ephys_meta_analysis/stimuli/2_seconds.mat');
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/2_seconds.mat');
 insert(ephys.Waveform, s);
 
 % Most common 8s stimulus
-load('/Users/asa/Documents/Code/ephys_meta_analysis/stimuli/8_seconds.mat');
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/8_seconds.mat');
 insert(ephys.Waveform, s);
 
 % Most common fluctuating odor stimulus. 
-load('/Users/asa/Documents/Code/ephys_meta_analysis/stimuli/var_freq_stim.mat');
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/var_freq_stim.mat');
 for iWav = 1:length(s)
 	insert(ephys.Waveform, s(iWav));
 end
 
 % 'Emre' stimulus - 10Hz 50p duty for 6s
-load('/Users/asa/Documents/Code/ephys_meta_analysis/stimuli/Emre.mat');
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/Emre.mat');
 insert(ephys.Waveform, s);
 
-% TODO: add current step waveforms
+% 'Emre' stimulus - 10Hz 50p duty for 6s
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/current_step.mat');
+insert(ephys.Waveform, s);
 
 
 % %% Populate OdorStim

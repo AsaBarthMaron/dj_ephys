@@ -3,8 +3,9 @@
 
 -> ephys.Trial
 ---
-units    			  : varchar(50)      # units (converted) to indicate stimulus magnitude. Typically pA or mV.
-cmd_mag  			  : smallint         # magnitude of stimulus, in units.
+cmd_units    		  : varchar(50)      # units (converted) to indicate stimulus magnitude. Typically pA or mV.
+cmd_mag  			  : float	         # magnitude of stimulus, in cmd_units.
+response_mag		  : float			 # magnitude of response, in ephys.Trial.units
 -> ephys.Waveform    
 
 %}
