@@ -28,6 +28,7 @@ trial_block = 0			: tinyint unsigned		# logical, is this trial part of a block?
 classdef Trial < dj.Imported
 	methods(Access=protected)
     	function makeTuples(self,key)
+    		disp(key.exp_id)
     		% TODO: these should maybe go in Amplifier or Experiment?
     		c.I_CH = 1;
     		c.V_CH = 2;
@@ -41,6 +42,8 @@ classdef Trial < dj.Imported
     		waveNameLookup = containers.Map({'1s', '2s', '8s', '10Hz', '2Hz', '0.5Hz'}, ... 
     										{'1_second', '2_seconds', '8_seconds', 'fast', 'med', 'slow'});
 
+    		% skippedFiles = struct('fname', []', 'dataPath', [], 'warningMsg', []);
+    		load('skippedFiles.mat')
 
     		% Experiment-level operations
     		% each call of makeTuples will iterate through and import all trials for a given experiment.
@@ -68,6 +71,18 @@ classdef Trial < dj.Imported
 			trialId = 1;
 			for iFile = 1:length(dataFiles)
 				fname = dataFiles(iFile).name;
+				if contains(fname, 'actually')
+					warningMsg = ['filename: ', fname, ' cannot be read correctly'];
+					warning(warningMsg)
+					skippedFiles(end+1).fname = fname;
+					skippedFiles(end).dataPath = dataPath;
+					skippedFiles(end).warningMsg = warningMsg;
+					continue
+				elseif ~contains(fname, '.mat') || contains(fname, 'dataFiles')
+					warningMsg = [fname, ' is not a data file'];
+					warning(warningMsg)
+					continue
+				end
 				f = load(fullfile(dataPath,fname));
 				fname_split = strsplit(fname, '_');
 
@@ -80,7 +95,7 @@ classdef Trial < dj.Imported
 				% e.g., bath, seal, vclamp (sealtest), early Iclamp single trials, etc.
 				% they have an important regularity - 
 				% they are the only files with 'exp_name' in the file name
-				if contains(fname, exp_name)
+				if contains(fname, {exp_name, 'bath', 'seal', 'Vclamp_cell', 'seal_spikes', 'Iclamp_zero', 'Iclamp_fast', 'Iclamp_whole_cell'})
 					% trial metadata
 					key.trial_id = trialId; 		
 					tuple = key;
@@ -105,7 +120,12 @@ classdef Trial < dj.Imported
 					elseif contains(fname, {'Vclamp_seal_spikes', 'Iclamp_zero'})
 						self.insert(tuple);
 					else
-						error(['Unrecognized file name: ', fname])
+						warningMsg = ['Unrecognized file name: ', fname];
+						warning(warningMsg)
+						skippedFiles(end+1).fname = fname;
+						skippedFiles(end).dataPath = dataPath;
+						skippedFiles(end).warningMsg = warningMsg;
+						continue
 					end
 				else
 					nTrials = size(f.data, 3);
@@ -137,7 +157,7 @@ classdef Trial < dj.Imported
 
 						% add recording trace and metadata
 						tuple = self.addTrace(tuple, f.data(:,:,iTrial), c);
-						
+						trialId = trialId + 1;
 
 						% Logic to handle different trial types
 
@@ -150,7 +170,12 @@ classdef Trial < dj.Imported
 
 							% TODO: configure things so multiple odors can be used
 							if (contains(fname, '2-hep') && contains(fname, 'farnesol'))
-								continue
+								warningMsg = ['Multiple odors in: ', fname];
+								warning(warningMsg)
+								skippedFiles(end+1).fname = fname;
+								skippedFiles(end).dataPath = dataPath;
+								skippedFiles(end).warningMsg = warningMsg;
+								break
 							end
 
 							% set odor identity and concentration
@@ -162,6 +187,7 @@ classdef Trial < dj.Imported
                                 iOdor = find(contains(fname_split, 'PO'));
                                 odorTuple.concentration = -1;
                             end
+                            iOdor = iOdor(1);
 							odorTuple.odor = fname_split{iOdor};
 							
 							% figure out waveform, and set it
@@ -170,9 +196,24 @@ classdef Trial < dj.Imported
 								odorTuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
 							elseif optogenetic_ln_stim || iOdor ~= 2	% also hack
 								odorTuple.wave_name = fname_split{iOdor - 1};
-								odorTuple.wave_name = waveNameLookup(odorTuple.wave_name);
+
+								if contains(odorTuple.wave_name, keys(waveNameLookup))
+									odorTuple.wave_name = waveNameLookup(odorTuple.wave_name);
+								else
+									warningMsg = ['Unrecognized odor waveform for: ' fname];
+									warning(warningMsg)
+									skippedFiles(end+1).fname = fname;
+									skippedFiles(end).dataPath = dataPath;
+									skippedFiles(end).warningMsg = warningMsg;
+									break		
+								end
 							else
-								error(['Unrecognized odor waveform for: ' fname])
+								warningMsg = ['Unrecognized odor waveform for: ' fname];
+								warning(warningMsg)
+								skippedFiles(end+1).fname = fname;
+								skippedFiles(end).dataPath = dataPath;
+								skippedFiles(end).warningMsg = warningMsg;
+								break						
 							end
 						end
 
@@ -206,10 +247,30 @@ classdef Trial < dj.Imported
 								optoTuple.wave_name = fname_split{iLed - 3};
 							end
 
-							if any(str2num(optoTuple.led_wavelength) == [470, 480, 490])
+							optoTuple.led_wavelength = str2num(optoTuple.led_wavelength);
+							if isempty(optoTuple.led_wavelength)
+								warningMsg = ['Unrecognized opto waveform for: ' fname];
+								warning(warningMsg)
+								skippedFiles(end+1).fname = fname;
+								skippedFiles(end).dataPath = dataPath;
+								skippedFiles(end).warningMsg = warningMsg;
+								break	
+							end
+
+							if any(optoTuple.led_wavelength == [470, 480, 490])
 								optoTuple.led_wavelength = 470;
 							end
-							optoTuple.wave_name = waveNameLookup(optoTuple.wave_name);
+
+							if contains(optoTuple.wave_name, keys(waveNameLookup))
+								optoTuple.wave_name = waveNameLookup(optoTuple.wave_name);
+							else
+								warningMsg = ['Unrecognized opto waveform for: ' fname];
+								warning(warningMsg)
+								skippedFiles(end+1).fname = fname;
+								skippedFiles(end).dataPath = dataPath;
+								skippedFiles(end).warningMsg = warningMsg;
+								break		
+							end
 							optoTuple.led_power = str2num(optoTuple.led_power(1:end-1));
 						end
 
@@ -239,18 +300,20 @@ classdef Trial < dj.Imported
 						% current step trials
 						elseif contains(fname, 'current_steps')
 							self.insertExtCmdTrial(key, tuple);
-						elseif contains(fname, 'actually')
-							warning(['filename: ', fname, ' may not have been read in correctly'])
 						else
-							error(['Unrecognized file name: ', fname])
+							warningMsg = ['Unrecognized file name: ', fname];
+							warning(warningMsg)
+							skippedFiles(end+1).fname = fname;
+							skippedFiles(end).dataPath = dataPath;
+							skippedFiles(end).warningMsg = warningMsg;
+							break				
 						end
-
-						trialId = trialId + 1;
 					end
 					trialId = trialId - 1;
 				end
 				trialId = trialId + 1;
 			end
+			save('skippedFiles.mat', 'skippedFiles');
     	end
 
     	function tuple = addTrace(self,tuple,data,c)
@@ -305,6 +368,7 @@ classdef Trial < dj.Imported
 			self.insert(tuple);
 			make(ephys.TrialExtCmd, extTuple);
 		end
+
     end
 end
 % TODO: 7/16 - clean up Trial table definition & write Trial import logic!! We're ready!

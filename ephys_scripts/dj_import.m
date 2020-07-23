@@ -36,7 +36,23 @@ s(1).data_path = '/Volumes/SSD_DATA/2020-02-03'
 
 insert(ephys.Experiment, s)
 
-%% dj Setup
+%%
+t = readtable('/Users/asa/Downloads/2020-07-23_Experiment_table_import.xlsx')
+s = table2struct(t)
+for i = 1:length(s)
+    s(i).data_path = ['/Volumes/SSD_DATA', s(i).data_path(21:end)]
+end
+s = rmfield(s, 'Exp__')
+s = rmfield(s, 'Stack')
+s = rmfield(s, 'CellType')
+s = rmfield(s, 'PhysiologyComments')
+s = rmfield(s, 'AnatomyComments')
+s = rmfield(s, 'ExpressionComments')
+i_exclude = [1, 3]  % #1 has crazy electrical drift, #3 has offset of 60.6mV from forgetting to zero the pipette (gives Infs upon insertion, rinput?).
+s(i_exclude) = [];
+insert(ephys.Experiment, s)
+
+% dj Setup
 ephys.Mode
 ephys.Gain
 ephys.FilterFreq
