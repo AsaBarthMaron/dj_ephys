@@ -17,6 +17,7 @@ samp_rate				: int unsigned			# sampling rate (samples / second)
 -> ephys.Amplifier 							
 
 odor_stim = 0     		: tinyint unsigned 		# logical, was odor used in this trial?
+clearing_trial = 0	    : tinyint unsigned		# logical, if odor trial, was this trial #1?
 opto_stim = 0     		: tinyint unsigned 		# logical, was otpo stim used in this trial?
 ext_cmd  = 0      		: tinyint unsigned 		# logical, was an external command sent (from amplifier)?
 seal_test = 0     		: tinyint unsigned 		# logical, was the seal test on?
@@ -36,6 +37,11 @@ classdef Trial < dj.Imported
     		c.MODE_CH = 6;
     		c.I_SCALING = 100; 		% hard coded switch on back of amplifier, set to 100 mV / pA (beta = 1)
 
+    		% TODO: should this be part of ephys.Waveform?
+    		waveNameLookup = containers.Map({'1s', '2s', '8s', '10Hz', '2Hz', '0.5Hz'}, ... 
+    										{'1_second', '2_seconds', '8_seconds', 'fast', 'med', 'slow'});
+
+
     		% Experiment-level operations
     		% each call of makeTuples will iterate through and import all trials for a given experiment.
     		expQuery = ephys.Experiment & ['exp_id=' num2str(key.exp_id)];
@@ -53,12 +59,17 @@ classdef Trial < dj.Imported
 			exp_name = expQuery.fetchn('exp_name');
             exp_name = exp_name{1};
 
+            % get experiment type ('LN_dynamics', 'optogenetic_LN_stim')
+            ln_dynamics = contains(dataPath, 'LN_dynamics');
+            optogenetic_ln_stim = contains(dataPath, 'optogenetic_LN_stim');
+
 			% Trial-block level operations
 			% iterate through each data file, a single file often consists of multiple trials (a 'block').
 			trialId = 1;
 			for iFile = 1:length(dataFiles)
 				fname = dataFiles(iFile).name;
 				f = load(fullfile(dataPath,fname));
+				fname_split = strsplit(fname, '_');
 
 				% Trial-level operations
 				% the majority of this code will be logic to parse filenames of various trial types.
@@ -69,7 +80,7 @@ classdef Trial < dj.Imported
 				% e.g., bath, seal, vclamp (sealtest), early Iclamp single trials, etc.
 				% they have an important regularity - 
 				% they are the only files with 'exp_name' in the file name
-				if ~isempty(strfind(fname, exp_name))
+				if contains(fname, exp_name)
 					% trial metadata
 					key.trial_id = trialId; 		
 					tuple = key;
@@ -84,14 +95,14 @@ classdef Trial < dj.Imported
 					tuple = self.addTrace(tuple, f.spacer_data, c);
 
 					% logic to handle different 'spacer' trial types
-					if ~isempty(strfind(fname, 'whole_cell_current_step'))
+					if contains(fname, 'whole_cell_current_step')
 						self.insertExtCmdTrial(key, tuple);
-					elseif ~isempty([strfind(fname, 'Vclamp_bath'), strfind(fname, 'Vclamp_seal'), strfind(fname, 'Vclamp_cell')])
+					elseif contains(fname, {'Vclamp_bath', 'Vclamp_seal', 'Vclamp_cell'})
 						tuple.seal_test = 1;
 						self.insert(tuple);
 						tuple = key;
 						make(ephys.TrialSealTest, tuple);
-					elseif ~isempty([strfind(fname, 'Vclamp_seal_spikes'), strfind(fname, 'Iclamp_zero')])
+					elseif contains(fname, {'Vclamp_seal_spikes', 'Iclamp_zero'})
 						self.insert(tuple);
 					else
 						error(['Unrecognized file name: ', fname])
@@ -107,6 +118,8 @@ classdef Trial < dj.Imported
 						tuple.trial_name = fname(12:end-4);
 						tuple.file_name = fname;
 						tuple.trial_block = 1;
+						tuple.odor_stim = 0;
+						tuple.opto_stim = 0;
 
 						% if there is a spacer trial, insert it
 						if spacer
@@ -126,23 +139,110 @@ classdef Trial < dj.Imported
 						tuple = self.addTrace(tuple, f.data(:,:,iTrial), c);
 						
 
-						% logic to handle different trial types
-						if (contains(fname, '2-hep') || contains(fname, 'farnesol'))
+						% Logic to handle different trial types
+
+						% odor trials
+						if contains(fname, {'2-hep', 'farnesol', 'PO', 'blank', 'valve'})
 							tuple.odor_stim = 1;
+							if iTrial == 1
+								tuple.clearing_trial = 1;
+							end
+
+							% TODO: configure things so multiple odors can be used
 							if (contains(fname, '2-hep') && contains(fname, 'farnesol'))
 								continue
 							end
+
+							% set odor identity and concentration
 							odorTuple = key;
-							fname_split = strsplit(fname, '_');
-							odorTuple.odor = fname_split{find(contains(fname_split, '10^-'))-1};
-							odorTuple.concentration = str2num(fname_split{contains(fname_split, '10^-')}(5:end));
+                            if contains(fname, '10^-')
+                                iOdor = find(contains(fname_split, '10^-'))-1;
+    							odorTuple.concentration = str2num(fname_split{iOdor + 1}(5:end));
+                            elseif contains(fname, 'PO')
+                                iOdor = find(contains(fname_split, 'PO'));
+                                odorTuple.concentration = -1;
+                            end
+							odorTuple.odor = fname_split{iOdor};
 							
-							WAV_LOOKUP = {'fast', 'med', 'slow'};
-							odorTuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
+							% figure out waveform, and set it
+							if ln_dynamics || strcmpi(fname_split{iOdor-1}, 'stim') || iOdor == 2	% hack
+								WAV_LOOKUP = {'fast', 'med', 'slow'};
+								odorTuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
+							elseif optogenetic_ln_stim || iOdor ~= 2	% also hack
+								odorTuple.wave_name = fname_split{iOdor - 1};
+								odorTuple.wave_name = waveNameLookup(odorTuple.wave_name);
+							else
+								error(['Unrecognized odor waveform for: ' fname])
+							end
+						end
+
+
+						% opto (LED) trials
+						if contains(fname, 'LED')
+							iLed = find(contains(fname_split, 'LED'));
+							tuple.opto_stim = 1;
+							optoTuple = key;
+							% set opsin
+							if contains(exp_name, 'GtACR1')
+								optoTuple.opsin = 'GtACR1';
+							elseif contains(exp_name, 'GtACR2')
+								optoTuple.opsin = 'GtACR2';
+							elseif contains(exp_name, 'CsChrimson')
+								optoTuple.opsin = 'CsChrimson';
+							end
+							optoTuple.nd_25 = sum(contains(fname_split, 'ND25'));
+							optoTuple.nd_3 = sum(contains(fname_split, 'ND25'));
+
+							% the following logic is a hack to deal with filename inconsistency
+							if contains(fname, 'LED_pulse')
+								% TODO: 7/23 
+								optoTuple.led_power = fname_split{iLed + 2};
+								optoTuple.led_wavelength = fname_split{iLed - 1};
+								optoTuple.wave_name = fname_split{iLed - 2};
+							else
+								% TODO: 7/23 
+								optoTuple.led_power = fname_split{iLed - 2};
+								optoTuple.led_wavelength = fname_split{iLed - 1};
+								optoTuple.wave_name = fname_split{iLed - 3};
+							end
+
+							if any(str2num(optoTuple.led_wavelength) == [470, 480, 490])
+								optoTuple.led_wavelength = 470;
+							end
+							optoTuple.wave_name = waveNameLookup(optoTuple.wave_name);
+							optoTuple.led_power = str2num(optoTuple.led_power(1:end-1));
+						end
+
+						
+						if tuple.odor_stim && ~tuple.opto_stim
 							self.insert(tuple);
 							make(ephys.TrialOdor, odorTuple);
+						elseif ~tuple.odor_stim && tuple.opto_stim
+							self.insert(tuple);
+							make(ephys.TrialOpto, optoTuple);							
+						elseif tuple.odor_stim && tuple.opto_stim
+
+
+							led_on = logical(mod(iTrial, 2));	% LED is on on odd trials
+							if contains(fname, 'reversed')
+								len_on = ~led_on;
+							end
+							if led_on && iTrial ~= 1
+								self.insert(tuple);
+								make(ephys.TrialOdor, odorTuple);
+								make(ephys.TrialOpto, optoTuple);
+							else
+								tuple.opto_stim = 0;
+								self.insert(tuple);
+								make(ephys.TrialOdor, odorTuple);
+							end
+						% current step trials
 						elseif contains(fname, 'current_steps')
 							self.insertExtCmdTrial(key, tuple);
+						elseif contains(fname, 'actually')
+							warning(['filename: ', fname, ' may not have been read in correctly'])
+						else
+							error(['Unrecognized file name: ', fname])
 						end
 
 						trialId = trialId + 1;
@@ -192,13 +292,13 @@ classdef Trial < dj.Imported
 			extTuple = key;
 			if contains(tuple.file_name, 'current_steps')
 				iExt = (3.5 * tuple.samp_rate):(4 * tuple.samp_rate);
-				extTuple.wave_name = 'current_step'
+				extTuple.wave_name = 'current_step';
 			elseif tuple.spacer_trial || (~tuple.trial_block)
 				iExt = (0.75 * tuple.samp_rate):(1 * tuple.samp_rate);
 				extTuple.wave_name = 'r_input_test';
 			end
 			
-			extTuple.cmd_units = 'pA'	% Right now these ExtCmd trials are assumed to be in Iclamp
+			extTuple.cmd_units = 'pA';	% Right now these ExtCmd trials are assumed to be in Iclamp
 			extTuple.cmd_mag = median(tuple.current(iExt)) - median(tuple.current);
 			extTuple.response_mag = median(tuple.voltage(iExt)) - median(tuple.voltage);
 			tuple.r_input = extTuple.response_mag / extTuple.cmd_mag;
