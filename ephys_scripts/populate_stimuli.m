@@ -26,8 +26,14 @@ end
 load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/Emre.mat');
 insert(ephys.Waveform, s);
 
-% 'Emre' stimulus - 10Hz 50p duty for 6s
+% current step waveform
 load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/current_step.mat');
+insert(ephys.Waveform, s);
+
+% 0.1s and 0.05s (NP1227 CsChrimson 1 off experiments, 2019-07-09)
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/0p1s.mat');
+insert(ephys.Waveform, s);
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/0p05s.mat');
 insert(ephys.Waveform, s);
 
 

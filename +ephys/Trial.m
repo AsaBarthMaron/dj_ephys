@@ -39,8 +39,8 @@ classdef Trial < dj.Imported
     		c.I_SCALING = 100; 		% hard coded switch on back of amplifier, set to 100 mV / pA (beta = 1)
 
     		% TODO: should this be part of ephys.Waveform?
-    		waveNameLookup = containers.Map({'1s', '2s', '8s', '10Hz', '2Hz', '0.5Hz'}, ... 
-    										{'1_second', '2_seconds', '8_seconds', 'fast', 'med', 'slow'});
+    		waveNameLookup = containers.Map({'1s', '2s', '8s', '10Hz', '2Hz', '0.5Hz', '0.1s', '0.05s'}, ... 
+    										{'1_second', '2_seconds', '8_seconds', 'fast', 'med', 'slow', '0.1s', '0.05s'});
 
     		% skippedFiles = struct('fname', []', 'dataPath', [], 'warningMsg', []);
     		load('skippedFiles.mat')
@@ -62,6 +62,10 @@ classdef Trial < dj.Imported
 			exp_name = expQuery.fetchn('exp_name');
             exp_name = exp_name{1};
 
+			% get date
+			exp_date = expQuery.fetchn('date');
+            exp_date = exp_date{1};
+
             % get experiment type ('LN_dynamics', 'optogenetic_LN_stim')
             ln_dynamics = contains(dataPath, 'LN_dynamics');
             optogenetic_ln_stim = contains(dataPath, 'optogenetic_LN_stim');
@@ -78,7 +82,7 @@ classdef Trial < dj.Imported
 					skippedFiles(end).dataPath = dataPath;
 					skippedFiles(end).warningMsg = warningMsg;
 					continue
-				elseif ~contains(fname, '.mat') || contains(fname, 'dataFiles')
+				elseif ~contains(fname(end-3:end), '.mat') || ~contains(fname, exp_date) || contains(fname, 'dataFiles')
 					warningMsg = [fname, ' is not a data file'];
 					warning(warningMsg)
 					continue
@@ -95,7 +99,7 @@ classdef Trial < dj.Imported
 				% e.g., bath, seal, vclamp (sealtest), early Iclamp single trials, etc.
 				% they have an important regularity - 
 				% they are the only files with 'exp_name' in the file name
-				if contains(fname, {exp_name, 'bath', 'seal', 'Vclamp_cell', 'seal_spikes', 'Iclamp_zero', 'Iclamp_fast', 'Iclamp_whole_cell'})
+				if contains(fname, {exp_name, 'bath', 'seal', 'Vclamp_cell', 'seal_spikes', 'Iclamp_zero', 'Iclamp_fast', 'Iclamp_whole_cell', 'Iclamp_normal'})
 					% trial metadata
 					key.trial_id = trialId; 		
 					tuple = key;
@@ -107,7 +111,11 @@ classdef Trial < dj.Imported
 					tuple.spacer_trial = 0;
 
 					% add recording trace and metadata
-					tuple = self.addTrace(tuple, f.spacer_data, c);
+					try
+						tuple = self.addTrace(tuple, f.spacer_data, c);
+					catch
+						error(fname)
+					end
 
 					% logic to handle different 'spacer' trial types
 					if contains(fname, 'whole_cell_current_step')
@@ -128,7 +136,11 @@ classdef Trial < dj.Imported
 						continue
 					end
 				else
-					nTrials = size(f.data, 3);
+					try
+						nTrials = size(f.data, 3);
+					catch
+						error(fname)
+					end
 					spacer = isfield(f, 'spacer_data');
 					for iTrial = 1:nTrials
 						key.trial_id = trialId; 		
@@ -145,7 +157,11 @@ classdef Trial < dj.Imported
 						if spacer
 							spacer_tuple = tuple;
 							spacer_tuple.spacer_trial = 1;
-							spacer_tuple = self.addTrace(spacer_tuple, f.spacer_data(:,:,iTrial), c);
+							try
+								spacer_tuple = self.addTrace(spacer_tuple, f.spacer_data(:,:,iTrial), c);
+							catch
+								error(fname)
+							end
 							self.insertExtCmdTrial(key, spacer_tuple);
 
 							trialId = trialId + 1;
@@ -182,13 +198,28 @@ classdef Trial < dj.Imported
 							odorTuple = key;
                             if contains(fname, '10^-')
                                 iOdor = find(contains(fname_split, '10^-'))-1;
+                                iOdor = iOdor(1);
     							odorTuple.concentration = str2num(fname_split{iOdor + 1}(5:end));
+    							odorTuple.odor = fname_split{iOdor};
                             elseif contains(fname, 'PO')
                                 iOdor = find(contains(fname_split, 'PO'));
+                                iOdor = iOdor(1);
                                 odorTuple.concentration = -1;
+                                odorTuple.odor = 'PO';
+                            elseif contains(fname, 'valve')
+                                iOdor = find(contains(fname_split, 'valve'));
+                                iOdor = iOdor(1);
+                                odorTuple.concentration = -1;
+                                odorTuple.odor = 'no_odor_valve';
+                            else
+								warningMsg = ['Unrecognized odor or concentratoin: ', fname];
+								warning(warningMsg)
+								skippedFiles(end+1).fname = fname;
+								skippedFiles(end).dataPath = dataPath;
+								skippedFiles(end).warningMsg = warningMsg;
+								break                            
                             end
-                            iOdor = iOdor(1);
-							odorTuple.odor = fname_split{iOdor};
+
 							
 							% figure out waveform, and set it
 							if ln_dynamics || strcmpi(fname_split{iOdor-1}, 'stim') || iOdor == 2	% hack
@@ -224,9 +255,9 @@ classdef Trial < dj.Imported
 							tuple.opto_stim = 1;
 							optoTuple = key;
 							% set opsin
-							if contains(exp_name, 'GtACR1')
+							if contains(exp_name, 'ACR1')
 								optoTuple.opsin = 'GtACR1';
-							elseif contains(exp_name, 'GtACR2')
+							elseif contains(exp_name, 'ACR2')
 								optoTuple.opsin = 'GtACR2';
 							elseif contains(exp_name, 'CsChrimson')
 								optoTuple.opsin = 'CsChrimson';
@@ -240,6 +271,10 @@ classdef Trial < dj.Imported
 								optoTuple.led_power = fname_split{iLed + 2};
 								optoTuple.led_wavelength = fname_split{iLed - 1};
 								optoTuple.wave_name = fname_split{iLed - 2};
+								if contains(fname, 'same_waveform')		% Only needed for 2019-07-09 and 2019-07-19 experiments
+									optoTuple.led_power = fname_split{iLed + 4};
+									optoTuple.wave_name = odorTuple.wave_name;
+								end
 							else
 								% TODO: 7/23 
 								optoTuple.led_power = fname_split{iLed - 2};
@@ -262,7 +297,9 @@ classdef Trial < dj.Imported
 							end
 
 							if contains(optoTuple.wave_name, keys(waveNameLookup))
-								optoTuple.wave_name = waveNameLookup(optoTuple.wave_name);
+                                optoTuple.wave_name = waveNameLookup(optoTuple.wave_name);
+                            % TODO: read in 'same_waveform' opto trials
+                            % (e.g., NP1227 2019-07-09)
 							else
 								warningMsg = ['Unrecognized opto waveform for: ' fname];
 								warning(warningMsg)
@@ -291,12 +328,20 @@ classdef Trial < dj.Imported
 							if led_on && iTrial ~= 1
 								self.insert(tuple);
 								make(ephys.TrialOdor, odorTuple);
-								make(ephys.TrialOpto, optoTuple);
+								try
+									make(ephys.TrialOpto, optoTuple);
+								catch
+									error(fname)
+								end
 							else
 								tuple.opto_stim = 0;
 								self.insert(tuple);
-								make(ephys.TrialOdor, odorTuple);
-							end
+                                try
+                                    make(ephys.TrialOdor, odorTuple);
+                                catch
+                                    error(fname)
+                                end
+                            end
 						% current step trials
 						elseif contains(fname, 'current_steps')
 							self.insertExtCmdTrial(key, tuple);
@@ -318,6 +363,15 @@ classdef Trial < dj.Imported
 
     	function tuple = addTrace(self,tuple,data,c)
     		% and related recording / amplifier metadata.
+
+    		% hack to clean up DAQ contamination
+    		% at one point (winter 2016/17) the 7th channel (output copy) was
+    		% improperly grounded and bleeding into the other channels
+    		% apparently this only occured on trials where an external command
+    		% was being sent from the computer (e.g., spacer trials)
+    		if size(data,2) > 6 && abs(median(data(:,6))) > 0.25
+    			data = data - data(:,7);
+    		end
 
 			% get & set amplifier settings
 			mode_voltage = num2str(round(median(data(:, c.MODE_CH))));
@@ -364,7 +418,10 @@ classdef Trial < dj.Imported
 			extTuple.cmd_units = 'pA';	% Right now these ExtCmd trials are assumed to be in Iclamp
 			extTuple.cmd_mag = median(tuple.current(iExt)) - median(tuple.current);
 			extTuple.response_mag = median(tuple.voltage(iExt)) - median(tuple.voltage);
-			tuple.r_input = extTuple.response_mag / extTuple.cmd_mag;
+            tuple.r_input = extTuple.response_mag / extTuple.cmd_mag;
+            if isinf(tuple.r_input)
+                tuple.r_input = -1;
+            end
 			self.insert(tuple);
 			make(ephys.TrialExtCmd, extTuple);
 		end

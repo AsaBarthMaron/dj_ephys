@@ -49,6 +49,7 @@ s = rmfield(s, 'PhysiologyComments')
 s = rmfield(s, 'AnatomyComments')
 s = rmfield(s, 'ExpressionComments')
 i_exclude = [1, 3]  % #1 has crazy electrical drift, #3 has offset of 60.6mV from forgetting to zero the pipette (gives Infs upon insertion, rinput?).
+i_exclude = 1:79;
 s(i_exclude) = [];
 insert(ephys.Experiment, s)
 
@@ -61,3 +62,9 @@ populate(ephys.Cell)
 ephys.Waveform
 
 draw(dj.ERD(ephys.getSchema))
+
+%% Get trial metadata
+trial_query = ephys.Trial;
+fields = {trial_query.header.attributes.name};
+trial_table = fetch(trial_query, 'resting_v', 'holding_current', 'holding_command', 'r_input', 'trial_name', 'file_name', 'odor_stim', 'clearing_trial', 'opto_stim', 'ext_cmd', 'seal_test', 'spacer_trial', 'trial_block');
+trial_table = struct2table(trial_table);
