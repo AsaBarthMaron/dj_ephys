@@ -50,6 +50,7 @@ s = rmfield(s, 'AnatomyComments')
 s = rmfield(s, 'ExpressionComments')
 i_exclude = [1, 3]  % #1 has crazy electrical drift, #3 has offset of 60.6mV from forgetting to zero the pipette (gives Infs upon insertion, rinput?).
 i_exclude = 1:79;
+% i_exclude = [1:130, 133:156];
 s(i_exclude) = [];
 insert(ephys.Experiment, s)
 

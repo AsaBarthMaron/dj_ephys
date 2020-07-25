@@ -90,6 +90,12 @@ classdef Trial < dj.Imported
 				f = load(fullfile(dataPath,fname));
 				fname_split = strsplit(fname, '_');
 
+				% load pre-analyzed data, if it exists.
+				analyzed_file = fullfile(dataPath, 'analyzed', [fname(1:end-4), '_analyzed.mat']);
+				if isfile(analyzed_file)
+					f_analyzed = load(analyzed_file);
+				end
+
 				% Trial-level operations
 				% the majority of this code will be logic to parse filenames of various trial types.
 
@@ -142,7 +148,7 @@ classdef Trial < dj.Imported
 						error(fname)
 					end
 					spacer = isfield(f, 'spacer_data');
-					for iTrial = 1:nTrials
+					for iTrial = 1:2%nTrials
 						key.trial_id = trialId; 		
 						tuple = key;
 						tuple.save_time = dataFiles(iFile).date(end-7:end);
@@ -163,6 +169,9 @@ classdef Trial < dj.Imported
 								error(fname)
 							end
 							self.insertExtCmdTrial(key, spacer_tuple);
+							if isfile(analyzed_file)
+								self.insertAnalyzed(key, f_analyzed, iTrial, spacer_tuple.spacer_trial);
+							end
 
 							trialId = trialId + 1;
 							tuple.trial_id = trialId;
@@ -353,6 +362,10 @@ classdef Trial < dj.Imported
 							skippedFiles(end).warningMsg = warningMsg;
 							break				
 						end
+
+						if isfile(analyzed_file)
+							self.insertAnalyzed(key, f_analyzed, iTrial, 0);
+						end
 					end
 					trialId = trialId - 1;
 				end
@@ -426,6 +439,32 @@ classdef Trial < dj.Imported
 			make(ephys.TrialExtCmd, extTuple);
 		end
 
+		function insertAnalyzed(self, key, f, iTrial, is_spacer)
+			tuple = key;
+
+			tuple.bandpass_cutoff = f.bandpassCutoff;
+			tuple.ds_factor = f.dsFactor;
+			tuple.med_filt_window = f.medFiltWindow;
+			
+			tuple.psth_bin_size = f.psthVar.binSize;
+			tuple.psth_method= f.psthVar.method;
+			
+			tuple.spd_min_prom = f.spd.minProm;
+			tuple.spd_max_width = f.spd.maxWidth;
+			tuple.spd_min_width = f.spd.minWidth;
+			tuple.spd_min_distance = f.spd.minDistance;
+
+			if is_spacer
+				tuple.spike_inds = f.spacerSpikeInds{iTrial};
+				tuple.psth = f.spacerPsth(:, iTrial);
+				tuple.vm_filt = f.spacerVmFilt(:, iTrial);
+			else
+				tuple.spike_inds = f.spikeInds{iTrial};
+				tuple.psth = f.psth(:, iTrial);
+				tuple.vm_filt = f.VmFilt(:, iTrial);
+			end
+			insert(ephys.Analyzed, tuple);
+		end
     end
 end
 % TODO: 7/16 - clean up Trial table definition & write Trial import logic!! We're ready!
