@@ -36,6 +36,9 @@ insert(ephys.Waveform, s);
 load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/0p05s.mat');
 insert(ephys.Waveform, s);
 
+% 2.5s_shutter_pulse - mercury lamp experiments
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/2p5s.mat');
+insert(ephys.Waveform, s);
 
 % %% Populate OdorStim
 % waveform = {'fast', 'med', 'slow', '1_second', '2_seconds'}

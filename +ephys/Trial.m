@@ -39,8 +39,8 @@ classdef Trial < dj.Imported
     		c.I_SCALING = 100; 		% hard coded switch on back of amplifier, set to 100 mV / pA (beta = 1)
 
     		% TODO: should this be part of ephys.Waveform?
-    		waveNameLookup = containers.Map({'1s', '2s', '8s', '10Hz', '2Hz', '0.5Hz', '0.1s', '0.05s'}, ... 
-    										{'1_second', '2_seconds', '8_seconds', 'fast', 'med', 'slow', '0.1s', '0.05s'});
+    		waveNameLookup = containers.Map({'1s', '2s', '2.5s', '8s', '10Hz', '2Hz', '0.5Hz', '0.1s', '0.05s'}, ... 
+    										{'1_second', '2.5s', '2_seconds', '8_seconds', 'fast', 'med', 'slow', '0.1s', '0.05s'});
 
     		% skippedFiles = struct('fname', []', 'dataPath', [], 'warningMsg', []);
     		load('skippedFiles.mat')
@@ -124,7 +124,7 @@ classdef Trial < dj.Imported
 					end
 
 					% logic to handle different 'spacer' trial types
-					if contains(fname, 'whole_cell_current_step')
+					if contains(fname, {'whole_cell_current_step', 'Iclamp_normal', 'Iclamp_fast'})
 						self.insertExtCmdTrial(key, tuple);
 					elseif contains(fname, {'Vclamp_bath', 'Vclamp_seal', 'Vclamp_cell'})
 						tuple.seal_test = 1;
@@ -148,7 +148,10 @@ classdef Trial < dj.Imported
 						error(fname)
 					end
 					spacer = isfield(f, 'spacer_data');
-					for iTrial = 1:2%nTrials
+                    if nTrials >= 2
+                        nTrials = 2;
+                    end
+					for iTrial = 1:nTrials
 						key.trial_id = trialId; 		
 						tuple = key;
 						tuple.save_time = dataFiles(iFile).date(end-7:end);
@@ -186,7 +189,7 @@ classdef Trial < dj.Imported
 
 						% Logic to handle different trial types
 
-						% odor trials
+						% odor trials - parse filename and set odorTuple, tuple
 						if contains(fname, {'2-hep', 'farnesol', 'PO', 'blank', 'valve'})
 							tuple.odor_stim = 1;
 							if iTrial == 1
@@ -258,8 +261,8 @@ classdef Trial < dj.Imported
 						end
 
 
-						% opto (LED) trials
-						if contains(fname, 'LED')
+						% opto trials - parse filename and set optoTuple, tuple
+						if contains(fname, {'LED', '2.5s_shutter_pulse')
 							iLed = find(contains(fname_split, 'LED'));
 							tuple.opto_stim = 1;
 							optoTuple = key;
@@ -272,7 +275,7 @@ classdef Trial < dj.Imported
 								optoTuple.opsin = 'CsChrimson';
 							end
 							optoTuple.nd_25 = sum(contains(fname_split, 'ND25'));
-							optoTuple.nd_3 = sum(contains(fname_split, 'ND25'));
+							optoTuple.nd_3 = sum(contains(fname_split, 'ND3'));
 
 							% the following logic is a hack to deal with filename inconsistency
 							if contains(fname, 'LED_pulse')
@@ -284,16 +287,16 @@ classdef Trial < dj.Imported
 									optoTuple.led_power = fname_split{iLed + 4};
 									optoTuple.wave_name = odorTuple.wave_name;
 								end
-							else
+							elseif contains(fname, 'LED')
 								% TODO: 7/23 
 								optoTuple.led_power = fname_split{iLed - 2};
 								optoTuple.led_wavelength = fname_split{iLed - 1};
 								optoTuple.wave_name = fname_split{iLed - 3};
 							end
-
+							
 							optoTuple.led_wavelength = str2num(optoTuple.led_wavelength);
 							if isempty(optoTuple.led_wavelength)
-								warningMsg = ['Unrecognized opto waveform for: ' fname];
+								warningMsg = ['Unrecognized opto wavelength for: ' fname];
 								warning(warningMsg)
 								skippedFiles(end+1).fname = fname;
 								skippedFiles(end).dataPath = dataPath;
@@ -318,6 +321,11 @@ classdef Trial < dj.Imported
 								break		
 							end
 							optoTuple.led_power = str2num(optoTuple.led_power(1:end-1));
+						elseif contains(fname, '2.5s_shutter_pulse')
+							optoTuple.led_power = 0;
+							optoTuple.led_wavelength = 0;
+							optoTuple.mercury_lamp = 1;
+							optoTuple.wave_name = '2.5s';
 						end
 
 						
@@ -326,7 +334,11 @@ classdef Trial < dj.Imported
 							make(ephys.TrialOdor, odorTuple);
 						elseif ~tuple.odor_stim && tuple.opto_stim
 							self.insert(tuple);
-							make(ephys.TrialOpto, optoTuple);							
+							try
+								make(ephys.TrialOpto, optoTuple);		
+							catch
+								disp(fname)
+							end					
 						elseif tuple.odor_stim && tuple.opto_stim
 
 
