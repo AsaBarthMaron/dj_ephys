@@ -11,7 +11,8 @@ holding_command = NULL  : smallint 				# in mV
 resting_v = NULL		: float					# in mV
 r_input = NULL			: float					# in GOhms
 trial_name				: varchar(100)
-file_name 				: varchar(200)			
+file_name 				: varchar(200)		
+new_fname = NULL		: varchar(200)			# to be used if original fname has a typo (typoLookup)	
 save_time				: time 					# the time the trial/block was saved
 samp_rate				: int unsigned			# sampling rate (samples / second)
 -> ephys.Amplifier 							
@@ -39,11 +40,15 @@ classdef Trial < dj.Imported
     		c.I_SCALING = 100; 		% hard coded switch on back of amplifier, set to 100 mV / pA (beta = 1)
 
     		% TODO: should this be part of ephys.Waveform?
-    		waveNameLookup = containers.Map({'1s', '2s', '2.5s', '8s', '10Hz', '2Hz', '0.5Hz', '0.1s', '0.05s'}, ... 
-    										{'1_second', '2.5s', '2_seconds', '8_seconds', 'fast', 'med', 'slow', '0.1s', '0.05s'});
+    		waveNameLookup = containers.Map({'1s', '2s', '2.5s', '8s', '10Hz', '2Hz', '0.5Hz', '0.1s', '0.05s', 'fast', 'med', 'slow', 'train'}, ... 
+    										{'1_second', '2.5s', '2_seconds', '8_seconds', 'fast', 'med', 'slow', '0.1s', '0.05s', 'fast', 'med', 'slow', 'Emre'});
 
     		% skippedFiles = struct('fname', []', 'dataPath', [], 'warningMsg', []);
     		load('skippedFiles.mat')
+
+    		% load the lookup table that helps handle filename typos
+			typoTable = readtable('/Volumes/SSD_DATA/2020-07-27_typo_lookup.xlsx');
+			typoLookup = containers.Map(typoTable.fname, typoTable.new_fname);
 
     		% Experiment-level operations
     		% each call of makeTuples will iterate through and import all trials for a given experiment.
@@ -75,7 +80,8 @@ classdef Trial < dj.Imported
 			trialId = 1;
 			for iFile = 1:length(dataFiles)
 				fname = dataFiles(iFile).name;
-				if contains(fname, 'actually')
+				typo_present = contains(fname, keys(typoLookup));
+				if contains(fname, 'actually') && ~typo_present
 					warningMsg = ['filename: ', fname, ' cannot be read correctly'];
 					warning(warningMsg)
 					skippedFiles(end+1).fname = fname;
@@ -96,6 +102,12 @@ classdef Trial < dj.Imported
 					f_analyzed = load(analyzed_file);
 				end
 
+				% handle filename typos
+				if typo_present
+					old_fname = fname;
+					fname = typoLookup(fname);
+					fname_split = strsplit(fname, '_');
+				end
 				% Trial-level operations
 				% the majority of this code will be logic to parse filenames of various trial types.
 
@@ -112,7 +124,12 @@ classdef Trial < dj.Imported
 					tuple.save_time = dataFiles(iFile).date(end-7:end);
 					tuple.samp_rate = f.sampRate;
 					tuple.trial_name = fname((13 + length(exp_name)):end-4);
-					tuple.file_name = fname;
+					if ~typo_present
+						tuple.file_name = fname;
+					else
+						tuple.file_name = old_fname;
+						tuple.new_fname = fname;
+					end
 					tuple.trial_block = 0;
 					tuple.spacer_trial = 0;
 
@@ -148,16 +165,21 @@ classdef Trial < dj.Imported
 						error(fname)
 					end
 					spacer = isfield(f, 'spacer_data');
-                    if nTrials >= 2
-                        nTrials = 2;
-                    end
+                    % if nTrials >= 2
+                    %     nTrials = 2;
+                    % end
 					for iTrial = 1:nTrials
 						key.trial_id = trialId; 		
 						tuple = key;
 						tuple.save_time = dataFiles(iFile).date(end-7:end);
 						tuple.samp_rate = f.sampRate;
 						tuple.trial_name = fname(12:end-4);
-						tuple.file_name = fname;
+						if ~typo_present
+							tuple.file_name = fname;
+						else
+							tuple.file_name = old_fname;
+							tuple.new_fname = fname;
+						end						
 						tuple.trial_block = 1;
 						tuple.odor_stim = 0;
 						tuple.opto_stim = 0;
@@ -262,7 +284,7 @@ classdef Trial < dj.Imported
 
 
 						% opto trials - parse filename and set optoTuple, tuple
-						if contains(fname, {'LED', '2.5s_shutter_pulse')
+						if contains(fname, {'LED', '2.5s_shutter_pulse'})
 							iLed = find(contains(fname_split, 'LED'));
 							tuple.opto_stim = 1;
 							optoTuple = key;
@@ -292,22 +314,37 @@ classdef Trial < dj.Imported
 								optoTuple.led_power = fname_split{iLed - 2};
 								optoTuple.led_wavelength = fname_split{iLed - 1};
 								optoTuple.wave_name = fname_split{iLed - 3};
-							end
-							
-							optoTuple.led_wavelength = str2num(optoTuple.led_wavelength);
-							if isempty(optoTuple.led_wavelength)
-								warningMsg = ['Unrecognized opto wavelength for: ' fname];
-								warning(warningMsg)
-								skippedFiles(end+1).fname = fname;
-								skippedFiles(end).dataPath = dataPath;
-								skippedFiles(end).warningMsg = warningMsg;
-								break	
+							% handle mercury lamp trials
+							elseif contains(fname, '2.5s_shutter_pulse')
+								optoTuple.led_power = 0;
+								optoTuple.led_wavelength = 0;
+								optoTuple.mercury_lamp = 1;
+								optoTuple.wave_name = '2.5s';
 							end
 
-							if any(optoTuple.led_wavelength == [470, 480, 490])
-								optoTuple.led_wavelength = 470;
+							% check LED trials for valid wavelength & LED power
+							if contains(fname, 'LED')
+								optoTuple.led_wavelength = str2num(optoTuple.led_wavelength);
+								if isempty(optoTuple.led_wavelength)
+									warningMsg = ['Unrecognized opto wavelength for: ' fname];
+									warning(warningMsg)
+									skippedFiles(end+1).fname = fname;
+									skippedFiles(end).dataPath = dataPath;
+									skippedFiles(end).warningMsg = warningMsg;
+									break	
+								end
+								if any(optoTuple.led_wavelength == [470, 480, 490])
+									optoTuple.led_wavelength = 470;
+								end
+
+								if contains(optoTuple.led_power, 'max')
+									optoTuple.led_power = 100;
+								else 
+									optoTuple.led_power = str2num(optoTuple.led_power(1:end-1));
+								end
 							end
 
+							% check opto trials for valid waveform
 							if contains(optoTuple.wave_name, keys(waveNameLookup))
                                 optoTuple.wave_name = waveNameLookup(optoTuple.wave_name);
                             % TODO: read in 'same_waveform' opto trials
@@ -320,15 +357,9 @@ classdef Trial < dj.Imported
 								skippedFiles(end).warningMsg = warningMsg;
 								break		
 							end
-							optoTuple.led_power = str2num(optoTuple.led_power(1:end-1));
-						elseif contains(fname, '2.5s_shutter_pulse')
-							optoTuple.led_power = 0;
-							optoTuple.led_wavelength = 0;
-							optoTuple.mercury_lamp = 1;
-							optoTuple.wave_name = '2.5s';
 						end
 
-						
+						% insert tuples and make part / computed tables
 						if tuple.odor_stim && ~tuple.opto_stim
 							self.insert(tuple);
 							make(ephys.TrialOdor, odorTuple);
@@ -337,16 +368,17 @@ classdef Trial < dj.Imported
 							try
 								make(ephys.TrialOpto, optoTuple);		
 							catch
-								disp(fname)
+								error(fname)
 							end					
 						elseif tuple.odor_stim && tuple.opto_stim
 
-
-							led_on = logical(mod(iTrial, 2));	% LED is on on odd trials
+							% LED is on on odd trials, even trials if 'reversed'
+							% LED is never on on the 1st trial - 'clearing_trial'
+							opto_on = logical(mod(iTrial, 2));	
 							if contains(fname, 'reversed')
-								len_on = ~led_on;
+								opto_on = ~opto_on;
 							end
-							if led_on && iTrial ~= 1
+							if opto_on && iTrial ~= 1
 								self.insert(tuple);
 								make(ephys.TrialOdor, odorTuple);
 								try
