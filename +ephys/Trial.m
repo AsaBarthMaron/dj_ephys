@@ -40,8 +40,8 @@ classdef Trial < dj.Imported
     		c.I_SCALING = 100; 		% hard coded switch on back of amplifier, set to 100 mV / pA (beta = 1)
 
     		% TODO: should this be part of ephys.Waveform?
-    		waveNameLookup = containers.Map({'1s', '2s', '2.5s', '8s', '10Hz', '2Hz', '0.5Hz', '0.1s', '0.05s', 'fast', 'med', 'slow', 'train'}, ... 
-    										{'1_second', '2.5s', '2_seconds', '8_seconds', 'fast', 'med', 'slow', '0.1s', '0.05s', 'fast', 'med', 'slow', 'Emre'});
+    		waveNameLookup = containers.Map({'1s', '2s', '2.5s', '8s', '10Hz', '4Hz', '2Hz', '0.5Hz', '0.1s', '0.05s', 'fast', 'med', 'slow', 'train'}, ... 
+    										{'1_second', '2_seconds', '2.5s', '8_seconds', 'fast', 'fastmed', 'med', 'slow', '0.1s', '0.05s', 'fast', 'med', 'slow', 'Emre'});
 
     		% skippedFiles = struct('fname', []', 'dataPath', [], 'warningMsg', []);
     		load('skippedFiles.mat')
@@ -257,7 +257,11 @@ classdef Trial < dj.Imported
 							
 							% figure out waveform, and set it
 							if ln_dynamics || strcmpi(fname_split{iOdor-1}, 'stim') || iOdor == 2	% hack
-								WAV_LOOKUP = {'fast', 'med', 'slow'};
+								if tuple.exp_id < 162 % huge hack. TODO
+									WAV_LOOKUP = {'fast', 'med', 'slow'};
+								else
+									WAV_LOOKUP = {'fastmed', 'med', 'slow'};
+								end
 								odorTuple.wave_name = WAV_LOOKUP{f.randTrials(iTrial)};
 							elseif optogenetic_ln_stim || iOdor ~= 2	% also hack
 								odorTuple.wave_name = fname_split{iOdor - 1};

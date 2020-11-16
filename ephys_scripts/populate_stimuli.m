@@ -22,6 +22,10 @@ for iWav = 1:length(s)
 	insert(ephys.Waveform, s(iWav));
 end
 
+% 'fastmed' is 2f the 'med' ~1.7Hz stimulus, first exp using it was on 2020-09-17
+load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/Emre.mat');
+insert(ephys.Waveform, s);
+
 % 'Emre' stimulus - 10Hz 50p duty for 6s
 load('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/stimuli/Emre.mat');
 insert(ephys.Waveform, s);

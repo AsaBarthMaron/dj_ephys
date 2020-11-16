@@ -63,6 +63,34 @@ populate(ephys.Cell)
 ephys.Waveform
 
 draw(dj.ERD(ephys.getSchema))
+%%
+t = readtable('/Users/asa/Documents/Code/ephys_meta_analysis/dj_ephys/ephys_scripts/2020-10-12_ephys_meta_analysis.xlsx')
+s = table2struct(t)
+for i = 1:length(s)
+    s(i).data_path = ['/Volumes/SSD_DATA', s(i).data_path(21:end)]
+end
+s = rmfield(s, 'Exp__')
+s = rmfield(s, 'Stack')
+s = rmfield(s, 'CellType')
+s = rmfield(s, 'PhysiologyComments')
+s = rmfield(s, 'AnatomyComments')
+s = rmfield(s, 'ExpressionComments')
+i_exclude = [1, 3]  % #1 has crazy electrical drift, #3 has offset of 60.6mV from forgetting to zero the pipette (gives Infs upon insertion, rinput?).
+% i_exclude = 1:156;
+i_exclude = 1:161;
+% i_exclude = [1:130, 133:156];
+s(i_exclude) = [];
+insert(ephys.Experiment, s)
+
+% dj Setup
+ephys.Mode
+ephys.Gain
+ephys.FilterFreq
+populate(ephys.Amplifier)
+populate(ephys.Cell)
+ephys.Waveform
+
+draw(dj.ERD(ephys.getSchema))
 
 %% Get trial metadata
 trial_query = ephys.Trial;
