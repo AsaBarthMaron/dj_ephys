@@ -2,5 +2,5 @@
 
 A [datajoint](https://www.datajoint.org/) (SQL framework) database for my electrophysiology experimental data. <br/>
 
-<u>Data model:</u>
+<ins>Data model:</ins><br/>
 ![ephys schema](https://github.com/AsaBarthMaron/dj_ephys/blob/master/%2Bephys/schema.png)
