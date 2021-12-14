@@ -1,4 +1,6 @@
 # dj_ephys
 
-A [datajoint](https://www.datajoint.org/) (SQL framework) database for my electrophysiology experimental data.
+A [datajoint](https://www.datajoint.org/) (SQL framework) database for my electrophysiology experimental data. <br/>
+
+<u>Data model:</u>
 ![ephys schema](https://github.com/AsaBarthMaron/dj_ephys/blob/master/%2Bephys/schema.png)
